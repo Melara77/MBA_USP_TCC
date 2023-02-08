@@ -1,0 +1,687 @@
+# Bibliocas ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#link - https://scikit-learn.org/stable/install.html --> baixar a biblioteca scikit-learn
+#link - https://github.com/scipy/scipy/issues/16418 --> importando o from scipy import stats
+
+#conda list scikit-learn  # para ver qual versão do scikit-learn está instalada
+#conda list # para ver todos os pacotes instalados no ambiente conda ativo
+
+# conda create -n sklearn-env -c conda-forge scikit-learn
+# conda activate sklearn-env
+
+
+import json
+import pandas as pd # lib pandas
+import numpy as np # lib numpy
+import datetime # lib datetime
+
+import matplotlib.pyplot as plt # lib para utilização dos gráficos
+import seaborn as sns # lib para exibir dados estátisticos
+
+# import numpy as np from scipy import stats
+# stats.mode(np.ones(3))[0]
+
+
+# Necessário para visualização automática dos gráficos no Jupyter
+%matplotlib inline
+
+from pathlib import Path
+from pandas import json_normalize # package for flattening json in pandas df
+from scipy import stats
+
+# lib sklearn
+from sklearn.model_selection import train_test_split # lib para definir os dados de treino e de teste
+from sklearn.neighbors import KNeighborsClassifier # lib classe KNeighborsClassifier - Classificação 
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score,roc_curve
+from sklearn import preprocessing # Import LabelEncoder
+from sklearn.model_selection import GridSearchCV
+from sklearn.ensemble import RandomForestClassifier # lib classe RandomForestClassifier - Classificação 
+from yellowbrick.classifier import ClassificationReport
+
+
+# Scraping e carregamento das variáveis pelo JSON---------------------------------------------------------------------------------------------------------------------------------------
+
+# Base ANUNCIOS
+----------------
+p = Path(r'C:\Users\maicon.melara\Documents\Python\data\Bases\data-bikes.json')
+with p.open('r', encoding='utf-8') as f:
+    data = json.loads(f.read())
+
+df_bikes = json_normalize(data) 
+
+df_bikes.info()
+# df_bikes.head()
+
+# Base FIPE
+-----------
+p = Path(r'C:\Users\maicon.melara\Documents\Python\data\Bases\data-bikes-fipe.json')
+with p.open('r', encoding='utf-8') as f:
+    data = json.loads(f.read())
+                      
+df_bikes_fipe = json_normalize(data)  
+
+df_bikes_fipe.info()
+#df_bikes_fipe.head() 
+
+# Unificando as Bases  ------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+df_bikes = df_bikes.join(df_bikes_fipe.set_index('UniqueId')[['Fipe']], on='UniqueId')
+df_bikes.head()
+
+# Delete em alguns campos --------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+ 
+del df_bikes['Media.Photos'] 
+
+del df_bikes['Seller.Id'] 
+del df_bikes['Seller.SellerType'] 
+del df_bikes['Seller.AdType.id'] 	
+del df_bikes['Seller.AdType.Value'] 
+del df_bikes['Seller.CarDelivery'] 
+del df_bikes['Seller.TrocaComTroco']
+del df_bikes['Seller.ExceededPlan'] 
+del df_bikes['Seller.BudgetInvestimento'] 
+del df_bikes['Seller.DealerScore'] 
+del df_bikes['Seller.City'] 
+del df_bikes['Seller.State'] 
+del df_bikes['Seller.FantasyName']
+
+del df_bikes['Prices.SearchPrice']
+
+del df_bikes['Specification.Model.id'] 
+del df_bikes['Specification.Make.id'] 
+del df_bikes['Specification.Color.IdPrimary']
+del df_bikes['Specification.VehicleAttributes'] 
+del df_bikes['Specification.YearFabrication']
+del df_bikes['Specification.BodyType'] 
+del df_bikes['Specification.Title']   
+del df_bikes['Specification.CubicCentimeter']     
+del df_bikes['Specification.Engine.Id']           
+del df_bikes['Specification.Engine.Value']       
+del df_bikes['Specification.Break.Id']            
+del df_bikes['Specification.Break.Value']         
+del df_bikes['Specification.Charge.Id']          
+del df_bikes['Specification.Charge.Value']     
+del df_bikes['Specification.Cooling.Id']        
+del df_bikes['Specification.Cooling.Value']      
+del df_bikes['Specification.Shift.Id']         
+del df_bikes['Specification.Shift.Value']      
+del df_bikes['Specification.Starter.Id']         
+del df_bikes['Specification.Starter.Value']            
+del df_bikes['Specification.Color.Secundary']   
+del df_bikes['Specification.Color.IdSecundary']
+del df_bikes['Prices.SearchPrice']
+
+del df_bikes['PhotoPath']
+del df_bikes['ProductCode']
+del df_bikes['Channels']
+del df_bikes['LongComment']
+del df_bikes['FipePercent']  
+
+
+
+-- Renomeando o nome das colunas ------------------------------------------------------------------------------------------------------------------------------------------------
+
+df_bikes.rename({'Specification.Make.Value': 'Make',
+                'Specification.Model.Value': 'Model',
+                'Specification.Version.Value': 'Version',
+                'Specification.YearModel': 'YearModel',
+                'Specification.Odometer': 'Odometer',
+                'Specification.Armored': 'Armored',
+                'Prices.Price': 'Price',
+                'Specification.Color.Primary': 'Color',
+                               }, axis=1, inplace=True)
+
+
+df_bikes.rename({'Seller.OnlyOwner': 'OnlyOwner',}, axis=1, inplace=True)
+
+# Converção de DTypes ---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Convertendo o ano de Float64 para Int64 (obs: o ano modelo retorna como float 1 casa decimal) ---------------------------------------------------------------------------------
+df_bikes['YearModel'] = df_bikes['YearModel'].astype('int64')
+
+# Convertendo dados que estão como object para string ------------------------------------------------------------------------------------------------------------------------------
+df_bikes['Make'] = df_bikes['Make'].astype('string')
+df_bikes['Model'] = df_bikes['Model'].astype('string')
+
+# Convertendo dados que estão como string para boll ------------------------------------------------------------------------------------------------------------------------------
+df_bikes['OnlyOwner'] = df_bikes['OnlyOwner'].astype('bool')
+df_bikes['GoodDeal'] = df_bikes['GoodDeal'].astype('bool')
+
+# Caso a coluna GoodDeal estiver nula, vamos considerar False. -----------------------------------------------------------------------------------------------------------------------
+df_bikes['GoodDeal'].loc[df_bikes['GoodDeal'].isnull()] = False
+
+# Verifica se existe algum valor nulo após o tratamento dos dados ----------------------------------------------------------------------------------------------------------------------
+df_bikes.isnull().sum()
+
+# Exibe a dimensão do DataFrame. linhas x colunas.--------------------------------------------------------------------------------------------------------------------------------------
+df_bikes.shape
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Motos que estão abaixo da tabela FIPE e IPVA Pago
+Bikes = (df_bikes['Price'] <= df_bikes['Fipe']) & (df_bikes['IPVApaid'])
+
+# Utilizando a função shape para pegar o tamanho de linhas do DataFrame com o filtro de motos
+df_bikes[bikes].shape[0]
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Motos que estão acima da tabela FIPE 
+bikes = (df_bikes['Price'] > df_bikes['Fipe'])
+
+# Utilizando a função shape para pegar o tamanho de linhas do DataFrame com o filtro de motos
+df_bikes[bikes].shape[0]
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Criando colunas PriceFipeOk e Year>10Years que auxiliará na verificação se o carro é ou não um bom negócio
+
+# Essa coluna identificará se o valor da moto está acima ou abaixo do valor da tabela Fipe (True-sim, False-não)
+df_bikes['PriceFipeOk'] = (df_bikes['Price'] <= df_bikes['Fipe']) 
+
+# Essa coluna identificará se o veículo tem mais de 10 anos (True- sim, False-não)
+now = datetime.datetime.now() # Pega a data atual 
+
+df_bikes['Year>10Years'] = (now.year - df_bikes['YearModel'] > 10) # verifica se a diferença do ano é superior a 10
+
+df_bikes.head()
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Utilizando a função describe para exibir as Estatísticas descritivas das colunas
+df_bikes.describe().round(2)
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------------------
+# Coluna GoodDeal (Bom Negócio)
+
+# Agrupa por GoodDeal e remove o index (GoodDeal)
+bikes_group_good_deal = df_bikes.groupby(['GoodDeal'], as_index=False)
+
+# Exibe colunas:
+# GoodDeal: valor único (agrupado)
+# UniqueId: quantidade de registros 
+bikes_group_good_deal = bikes_group_good_deal.agg({'GoodDeal': np.unique, 'UniqueId': np.size}).round(2)
+
+# Renomeando as colunas para apresentá-las
+bikes_group_good_deal = bikes_group_good_deal.rename(columns={'GoodDeal':'Bom Negócio', 'UniqueId': 'Quantidade'})
+
+# Alterando os valores das linhas da coluna Bom Negócio para o label text
+# obs: Isso facilitará no uso do gráfico logo abaixo
+bikes_group_good_deal.loc[bikes_group_good_deal['Bom Negócio'] == True, ['Bom Negócio']] = 'Bom Negócio'
+bikes_group_good_deal.loc[bikes_group_good_deal['Bom Negócio'] == False, ['Bom Negócio']] = 'Pode não ser um Bom Negócio'
+
+# Calculando a Porcentagem da coluna Quantidade 
+# obs: Essa coluna será usada no gráfico abaixo
+bikes_group_good_deal['Porcentagem'] = (bikes_group_good_deal['Quantidade'] / bikes_group_good_deal['Quantidade'].sum()) * 100
+
+# ordena o Dataframe para apresentar primeiro os valores Valor > Fipe e posteriormente Valor <= Fipe
+# obs: isso garantirá no gráfico esta ordem para utilização da configuração de cores
+bikes_group_good_deal = bikes_group_good_deal.sort_values(by=['Bom Negócio'], ascending=False)
+
+bikes_group_good_deal
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Agrupa e exibe motos pelo preço médio de cada marca.
+bikes_group_make_mean = df_bikes.groupby(['Make'], as_index=False)
+
+# Exibe colunas:
+# Model: valor único (agrupado)
+# Preço: média de preço daquela Marca 
+bikes_group_make_mean = bikes_group_make_mean.agg({'Price':np.mean, 'UniqueId': np.size}).round(2)
+
+# Renomeando as colunas para apresentá-las
+bikes_group_make_mean = bikes_group_make_mean.rename(columns={'Make':'Marca','Price':'Preço Médio', 'UniqueId': 'Quantidade'})
+
+# Ordenando em ordem Decrescente pela coluna modelo
+bikes_group_make_mean = bikes_group_make_mean.sort_values('Marca', ascending=True)
+
+bikes_group_make_mean
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Gráfico Quantidade de motos de cada Marca
+
+# Extrai o resultado do agrupamento (Preço Médio + Modelo) para exibir no gráfico
+fig = plt.figure(figsize=(8,6))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+# Adicionando os Índices das marcas
+indice = np.arange(len(bikes_group_make_mean))
+
+eixo.barh(indice, bikes_group_make_mean['Quantidade'].round(), align='center', height=0.8,  tick_label=bikes_group_make_mean['Marca'], color=["#d5224a", '#f6a67e'])
+
+# Alterando Título e Labels
+eixo.set_title('Quantidade X Marca', fontsize=15, pad=20)
+eixo.set_xlabel('Quantidade')
+eixo.set_ylabel('Marca')
+
+eixo.set_yticks(indice)
+eixo.set_yticklabels(bikes_group_make_mean['Marca'], fontsize=7.8)
+
+# Adicionando Legenda
+eixo.legend(['Qtd Motos'], loc = 'lower right')
+
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Exibe tabela agrupando Modelo, Ano Modelo, Km Médio e Quantidade de cada modelo.
+
+# Agrupa e exibe motos pelo número médio de km rodados por ano por modelo
+bikes_group_model_mean_km_year = df_bikes.groupby(['Model', 'YearModel'], as_index=False)
+
+# Exibe colunas:
+# Model: valor único (agrupado)
+# YearModel: valor único (agrupado)
+# Odometer: média de km daquele modelo 
+bikes_group_model_mean_km_year = bikes_group_model_mean_km_year.agg({'Odometer':np.mean, 'UniqueId': np.size}).round(2)
+
+# Renomeando as colunas para apresentá-las
+bikes_group_model_mean_km_year = bikes_group_model_mean_km_year.rename(columns={'Model':'Modelo', 'YearModel':'Ano Modelo','Odometer':'Km Médio', 'UniqueId': 'Quantidade'})
+
+bikes_group_model_mean_km_year.head()
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Selecionando apenas os motos que houve uma baixa no preço inicial do anúncio.
+
+# Agrupa os motos por Marca, somente os que houve uma alteração do preço para um menor valor
+
+# Agrupa por Make
+bikes_group_make_old_price = df_bikes[df_bikes['OldPrice'] > df_bikes['Price']].groupby(['Make'], as_index=False)
+
+# Exibe colunas:
+# UniqueId: quantidade de registros 
+bikes_group_make_old_price = bikes_group_make_old_price.agg({ 'UniqueId': np.size}).round(2)
+
+# Renomeando as colunas para apresentá-las 
+bikes_group_make_old_price = bikes_group_make_old_price.rename(columns={'Make':'Marca', 'UniqueId':'Quantidade'})
+
+bikes_group_make_old_price
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Gráfico Marca X Quantidade
+
+# Pega o resultado do agrupamento (Marca e Qtd de registros) para exibir no gráfico
+fig = plt.figure(figsize=(8,4))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+# Adicionando os Índices das marcas
+indice = np.arange(len(bikes_group_make_old_price))
+
+eixo.barh(indice, bikes_group_make_old_price['Quantidade'].round(), align='center', height=0.5,  tick_label=bikes_group_make_old_price['Marca'], color=["#d5224a", '#f6a67e'])
+
+# Alterando Título e Labels
+eixo.set_title('Marca X Quantidade', fontsize=15, pad=20)
+eixo.set_xlabel('Quantidade')
+eixo.set_ylabel('Marca')
+
+eixo.set_yticks(indice)
+eixo.set_yticklabels(bikes_group_make_old_price['Marca'], fontsize=9)
+
+# Adicionando Legenda
+eixo.legend(['Qtd Carros'], loc = 'lower right')
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------------
+# não-funcionou
+
+Exibe a tabela com o Ano, Km e Quantidade de motos por ano.
+
+# Agrupa as motos por Ano e Calcula a Média e a Quantidade por Ano
+
+# Agrupa por ano e remove o index (YearModel)
+bikes_group_mean_year = df_bikes.groupby(['YearModel'], as_index=False)
+
+# Exibe colunas:
+# YearModel: valor único (agrupado)
+# Odometer: média de valores (Km)
+# UniqueId: quantidade de registros 
+bikes_group_mean_year = bikes_group_mean_year.agg({'YearModel': np.unique, 'Odometer':np.mean, 'UniqueId': np.size}).round(2)
+
+# Renomeando as colunas para apresentá-las
+bikes_group_mean_year = bikes_group_mean_year.rename(columns={'YearModel':'Ano','Odometer':'Km', 'UniqueId': 'Quantidade'})
+
+# Ordenando em ordem Decrescente pela coluna ano
+bikes_group_mean_year = bikes_group_mean_year.sort_values('Ano', ascending=False)
+#.reset_index()
+
+bikes_group_mean_year.head()
+
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------
+# não-funcionou
+
+Exibe Gráfico agrupando a Quilometragem e Ano das motos.
+
+Neste gráfico foi considerado apenas as motos com ano entre [2000 - Ano Atual]. Percebemos que quanto mais tempo em anos as motos tem, a quilometragem é 
+proporcional ao uso.
+
+# Gráfico variação de Quilometragem e Ano da moto
+
+# Pega o resultado do agrupamento (Ano + Quilometragem) para exibir no gráfico
+fig = plt.figure(figsize=(8,4))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+# Adicionando gráfico
+eixo.plot(bikes_group_mean_year['Ano'], bikes_group_mean_year['Km'], color= '#d5224a', lw=2, marker = 'o')
+
+# Exibe no gráfico somente as motos entre [2000 - Ano Atual]
+eixo.set_xlim(2000) # a partir de 2000
+
+# Adicionando cor de destaque para motos que ainda estão entre 10 anos 
+bikes_10_years = now.year - bikes_group_mean_year['Ano']  < 10
+eixo.plot(bikes_group_mean_year[bikes_10_years]['Ano'], bikes_group_mean_year[bikes_10_years]['Km'], color= '#5c1e51', lw=2, marker = 'o')
+
+# Alterando Título e Labels
+eixo.set_title('Quilometragem x Ano Modelo', fontsize=15, pad=20)
+eixo.set_ylabel('Km')
+eixo.set_xlabel('Ano')
+
+# Adicionando Legenda
+eixo.legend(['Km Motos', 'Km Motos < 10 Anos'], loc = 'lower right')
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Agrupa os motos por Make e quantidade com PriceFipeOk (True or False)
+# obs: Consideremos apenas as 10 maiores marcas de motos 
+make_top_10 = ['HONDA','BMW','YAMAHA','HARLEY-DAVIDSON','TRIUMPH','KAWAZAKY','SUZUKI','DUCATI','DAFRA','HAOJUE']
+
+# Agrupa por marca e remove o index (Make)  
+bikes_group_make_fipe = pd.get_dummies(df_bikes, columns=['PriceFipeOk']).groupby(['Make'], as_index=False).sum()
+
+# Renomeando as colunas para apresentá-las 
+bikes_group_make_fipe = bikes_group_make_fipe.rename(columns={'Make':'Marca', 'PriceFipeOk_True':'Preço Fipe OK', 'PriceFipeOk_False':'Preço Fipe Não OK'})
+
+# Exibe colunas:
+# Make: valor único (agrupado)
+# PriceFipeOk_True: quantidade de registros Preço Fipe OK
+# PriceFipeOk_False: quantidade de registros Preço Fipe Não OK
+bikes_group_make_fipe = bikes_group_make_fipe[['Marca', 'Preço Fipe OK', 'Preço Fipe Não OK']]
+
+# Pega apenas os registros que estão com o Preço Fipe OK (PriceFipeOk) e que estão entre as 10 maiores marcas de motos
+bikes_group_make_fipe = bikes_group_make_fipe[(bikes_group_make_fipe['Marca'].isin(make_top_10))]
+
+bikes_group_make_fipe
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------
+
+Exibe Gráfico Relação das Marcas e Preço Fipe OK e Fipe não OK.
+
+Consideramos apenas as 10 maiores marcas.
+
+# Gráfico variação de Marcas e Preço Fipe
+
+# Pega o resultado do agrupamento (Marca + Preço Fipe) para exibir no gráfico
+fig = plt.figure(figsize=(8,4))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+# Adicionando os Índices das marcas
+indice = np.arange(len(bikes_group_make_fipe))
+
+width = 0.35  # tamanho das barras
+
+# Adicionando barras Preço <= Valor Fipe
+eixo.bar(indice - width/2, bikes_group_make_fipe['Preço Fipe OK'], width, color= '#5c1e51')
+
+# Adicionando barras Preço > Valor Fipe
+eixo.bar(indice + width/2, bikes_group_make_fipe['Preço Fipe Não OK'], width, color= '#d5224a')
+
+# Alterando Título e Labels
+eixo.set_title('Valor Venda x Valor Fipe - 10 Maiores Marcas', fontsize=15, pad=20)
+eixo.set_xlabel('Marcas')
+eixo.set_ylabel('Qtd Motos Preço Fipe')
+
+eixo.set_xticks(indice)
+eixo.set_xticklabels(bikes_group_make_fipe['Marca'], fontsize=9)
+
+# Adicionando Legenda
+eixo.legend(['Valor <= Fipe', 'Valor > Fipe'], loc = 'lower right')
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+# não-funcionou
+
+Exibe tabela com a Quantidade e Porcentagem de motos com o Valor Fipe Ok e não OK.
+
+# Agrupa as motos onde PriceFipeOk (o valor está <= ao valor da tabela Fipe ou valor > valor da tabela Fipe)
+
+# Fazer agrupamento somente com motos com ano <= 10 anos
+bikes_10_years = now.year - df_bikes['YearModel']  <= 10
+
+# Agrupa por PriceFipeOk e remove o index (PriceFipeOk)
+# somente para motos onde ano <= 10
+bikes_group_fipe_10_years = df_bikes[bikes_10_years].groupby(['PriceFipeOk'], as_index=False)
+
+# Exibe colunas:
+# PriceFipeOk: valor único (agrupado)
+# UniqueId: quantidade de registros 
+bikes_group_fipe_10_years = bikes_group_fipe_10_years.agg({'PriceFipeOk': np.unique, 'UniqueId': np.size}).round(2)
+
+# Renomeando as colunas para apresentá-las
+bikes_group_fipe_10_years = bikes_group_fipe_10_years.rename(columns={'PriceFipeOk':'Preço Fipe OK', 'UniqueId': 'Quantidade'})
+
+
+# Alterando os valores das linhas da coluna Preço Fipe OK para o label text
+# obs: Isso facilitará no uso do gráfico logo abaixo
+bikes_group_fipe_10_years.loc[bikes_group_fipe_10_years['Preço Fipe OK'] == True, ['Preço Fipe OK']] = 'Valor <= Fipe'
+bikes_group_fipe_10_years.loc[bikes_group_fipe_10_years['Preço Fipe OK'] == False, ['Preço Fipe OK']] = 'Valor > Fipe'
+
+# Calculando a Porcentagem da coluna Quantidade 
+# obs: Essa coluna será usada no gráfico abaixo
+bikes_group_fipe_10_years['Porcentagem'] = (bikes_group_fipe_10_years['Quantidade'] / bikes_group_fipe_10_years['Quantidade'].sum()) * 100
+
+# ordena o Dataframe para apresentar primeiro os valores Valor > Fipe e posteriormente Valor <= Fipe
+# obs: isso garantirá no gráfico esta ordem para utilização da configuração de cores
+bikes_group_fipe_10_years = bikes_group_fipe_10_years.sort_values(by=['Preço Fipe OK'], ascending=False)
+
+bikes_group_fipe_10_years
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Adicionando coluna OdometerRecommended. Consideremos como uma moto com quilometragem recomendada se a média de quilometragem por ano for <= 15.000 km rodados.
+
+df_bikes['OdometerRecommended'] = (df_bikes['Odometer'] / (now.year - df_bikes['YearModel']) < 15000)
+df_bikes
+
+Relação da coluna GoodDeal com a coluna OdometerRecommended
+
+(df_bikes['OdometerRecommended'] & df_bikes['GoodDeal']).sum()
+
+
+# -------------------------------------------------------------------------------------------------------------------------------------------------------
+# Matriz de Correlação
+
+Preparando os dados que serão utilizados na análise. Neste momento já estamos preparando os dados para a classificação e excluindo alguns atributos que não são relevantes, isso facilitará na nossa análise.
+
+# Fazendo uma cópia do dataframe original
+df_bikes_class = df_bikes.copy()
+
+# Deletando atributos que não serão utilizados
+del df_bikes_class['UniqueId']
+del df_bikes_class['Make']
+del df_bikes_class['Model']
+del df_bikes_class['Licensed']
+
+del df_bikes_class['Year>10Years']
+
+# Convertendo o tipo dos atributos
+df_bikes_class['OdometerRecommended'] = df_bikes_class['OdometerRecommended'].astype('int64')
+df_bikes_class['IPVApaid'] = df_bikes_class['IPVApaid'].astype('int64')
+#df_bikes_class['Licensed'] = df_bikes_class['Licensed'].astype('int64')
+df_bikes_class['Warranty'] = df_bikes_class['Warranty'].astype('int64')
+df_bikes_class['OnlyOwner'] = df_bikes_class['OnlyOwner'].astype('int64')
+df_bikes_class['PriceFipeOk'] = df_bikes_class['PriceFipeOk'].astype('int64')
+#df_bikes_class['Year>10Years'] = df_bikes_class['Year>10Years'].astype('int64')
+
+# Convertendo dados categóricos em numéricos
+#creating labelEncoder
+le = preprocessing.LabelEncoder()
+# Converting string labels into numbers.
+#df_bikes_class['Armored']=le.fit_transform(df_bikes_class['Armored'])
+df_bikes_class['Color']=le.fit_transform(df_bikes_class['Color'])
+
+# -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Antes de aplicarmos os algoritmos de Machine Learning, iremos realizar algumas análises sobre os dados.
+
+Para determinar a correlação dos atributos usaremos em forma gráfica a Matriz de Correlação.
+
+# Gráfico de Matriz de Correlação 
+df_small = df_bikes_class.copy()
+
+# O corr() método do Pandas DataFrame  é usado para calcular a matriz. 
+# Por padrão, ele calcula o coeficiente de correlação de Pearson
+correlation_mat = df_small.corr(method='pearson')
+
+# Definindo as configurações do Gráfico
+fig = plt.figure(figsize=(8,4))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+# Usando o método heatmap para traçar a Matriz
+# O parâmetro ' annot=True' exibe os valores do coeficiente de correlação em cada célula.
+sns.heatmap(correlation_mat, annot = True, linewidth=0.5)
+
+# Definindo titulo e labels do gráfico
+eixo.set_title('Matriz de Correlação dos atributos', fontsize=15, pad=20)
+eixo.set_xlabel ("características do núcleo da célula")
+eixo.set_ylabel ("características do núcleo da célula")
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+# 5. Criação de Modelos de Machine Learning
+# Analisando e preparando os dados
+# Criando uma coluna para representar as classes 0 e 1, para classificar os carros como "GoodDeal" (1 - Sim ou 2 - Não). Baseado no valor da Coluna booleana GoodDeal.
+
+# criando coluna Class
+df_bikes_class['Class'] = (df_bikes['GoodDeal']).astype('int64')
+
+2ª opção:
+df_bikes_class['Class'] = df_bikes_class['Class'].astype('Float64')
+
+
+# Deletando a coluna GoodDeal, pois agora seu valor está na coluna Class
+del df_bikes_class['GoodDeal']
+
+Exibindo a quantidade de carros de cada classe (se é ou não um bom negócio).
+
+df_bikes_class.groupby('Class')['PriceFipeOk'].count()
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Definindo as variáveis que serão utilizadas para os modelos.
+
+Onde: X= todas as colunas, removendo apenas a coluna de classificação "Class". y= pega somente a coluna de classificação "Class".
+
+X = df_bikes_class.drop('Class', axis=1)
+y = df_bikes_class['Class']
+Dividindo base de Teste e de Treino.
+
+Consideramos 70% da base para treino e 30% para teste.
+
+# Divide o DataFrame em teste e treino
+# 70% treino
+# 30% teste
+train_X, test_X, train_y, test_y = train_test_split(X, y, train_size=0.70, test_size=0.30, stratify=y)
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# se der erro, verificar valores NULOS
+df_bikes_class['Fipe'].loc[df_bikes_class['Fipe'].isnull()] = False
+
+Criando instância KNeighborsClassifier
+
+# Instânciando KNeighborsClassifier
+knn = KNeighborsClassifier()
+knn.fit(train_X, train_y)
+
+
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+print (pd.crosstab(test_y, pred_knn, rownames=['Real'], colnames=['Predito'], margins=True))
+
+
+# -----------------------------------------------------------------------------------------------------------------------------------------------
+# Gráfico Grau de Importancia
+
+fig = plt.figure(figsize=(8,5))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+# Adicionando os Índices
+indice = np.arange(len(X.columns))
+
+eixo.barh(indice, rfc.feature_importances_, align='center', height=0.7,  tick_label=X.columns, color=["#d5224a", '#f6a67e'])
+
+# Alterando Título e Labels
+eixo.set_title('Grau de Importância dos atributos', fontsize=15, pad=20)
+eixo.set_xlabel('Importância')
+eixo.set_ylabel('Atributo')
+
+eixo.set_yticks(indice)
+
+# Adicionando Legenda
+eixo.legend(['Grau de importância'], loc = 'lower right')
+
+# ------------------------------------------------------------------------------------------------------------------------------------------------
+# Curva ROC
+
+y_proba_rfc = rfc.predict_proba(test_X)[:,1]
+fpr_rfc, tpr_rfc, thresholds = roc_curve(test_y, y_proba_rfc)
+
+y_proba_knn = knn.predict_proba(test_X)[:,1]
+fpr_knn, tpr_knn, thresholds = roc_curve(test_y, y_proba_knn)
+
+fig = plt.figure(figsize=(7,4))
+eixo = fig.add_axes([0, 0, 1, 1])
+
+eixo.plot(fpr_rfc, tpr_rfc, label='RandomForestClassifier', color= '#d5224a')
+eixo.plot(fpr_knn, tpr_knn, label='KNeighborsClassifier', color= '#5c1e51')
+
+# Alterando Título e Labels
+eixo.set_xlabel('False positive rate')
+eixo.set_ylabel('True positive rate')
+eixo.set_title('Curva ROC')
+
+# Adicionando Legenda
+eixo.legend(loc='best')
+
+# --------------------------------------------------------------------------------------------------------------------------------------------
+# Modelo de Classificação KNN
+
+result = confusion_matrix(test_y, pred_rfc)
+print("Confusion Matrix:")
+print(result)
+result1 = classification_report(test_y, pred_rfc)
+print("Classification Report:",)
+print (result1)
+result2 = accuracy_score(test_y,pred_rfc)
+print("Accuracy:",result2)
+
+# Instanciando o modelo de classificação e o objeto visualizer
+visualizer = ClassificationReport(knn, classes=['Won','Loss'])
+visualizer.fit(train_X, train_y) # adicionando o resultado do modelo no objeto visualizer
+visualizer.score(test_X, test_y) # adicionando resultados da base de teste
+g = visualizer.poof() # desenha o gráfico
+
+# -------------------------------------------------------------------------------------------------------------------------------------------
+# Modelo de Classificação Randon
+
+rfc = RandomForestClassifier(n_estimators=50)
+rfc.fit(train_X, train_y)
+
+RandomForestClassifier(n_estimators=50)
+
+rfc.score(train_X, train_y)
+
+pred_rfc = rfc.predict(test_X)
+
+result = confusion_matrix(test_y, pred_rfc)
+print("Confusion Matrix:")
+print(result)
+result1 = classification_report(test_y, pred_rfc)
+print("Classification Report:",)
+print (result1)
+result2 = accuracy_score(test_y,pred_rfc)
+print("Accuracy:",result2)
+
+# Matriz de Confusão
+print (pd.crosstab(test_y, pred_rfc, rownames=['Real'], colnames=['Predito'], margins=True))
+
+# Instanciando o modelo de classificação e o objeto visualizer
+visualizer = ClassificationReport(rfc, classes=['Won','Loss'])
+visualizer.fit(train_X, train_y) # adicionando o resultado do modelo no objeto visualizer
+visualizer.score(test_X, test_y) # adicionando resultados da base de teste
+g = visualizer.poof() # desenha o gráfico
